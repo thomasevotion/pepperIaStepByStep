@@ -1,0 +1,23 @@
+version: '3.8'
+services:
+  ollama-phi3:
+    image: ollama/ollama:latest
+    container_name: ollama-phi3-ultra
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-phi3-data:/root/.ollama
+    environment:
+      - OLLAMA_FLASH_ATTENTION=1
+      - OLLAMA_KV_CACHE_TYPE=q4_0
+      - OLLAMA_NUM_PARALLEL=1
+    restart: unless-stopped
+    entrypoint: >
+      sh -c "ollama serve &
+             sleep 15 &&
+             ollama pull phi3:mini &&
+             echo '✅ Phi3:mini téléchargé et prêt' &&
+             tail -f /dev/null"
+
+volumes:
+  ollama-phi3-data:

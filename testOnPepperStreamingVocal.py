@@ -6,11 +6,12 @@ import threading
 import socket
 import json
 
+
 class VoiceToLLM(object):
     def __init__(self, session, llm_host="127.0.0.1", llm_port=8888):
         self.session = session
         self.memory = session.service("ALMemory")
-        self.tts = session.service("ALTextToSpeech")  # AJOUTÉ pour faire parler Pepper
+        self.tts = session.service("ALTextToSpeech")
         self.is_running = False
 
         # Pour LLM
@@ -18,7 +19,7 @@ class VoiceToLLM(object):
         self.llm_port = llm_port
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         
-        # AJOUTÉ : Socket pour recevoir les réponses LLM
+        # Socket pour recevoir les réponses LLM
         self.response_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.response_port = 8889
         
@@ -27,12 +28,12 @@ class VoiceToLLM(object):
         self.words_buffer = []
         self.recording = False
         self.speech_start_time = 0
-        self.silence_timeout = 1.5
+        self.silence_timeout = 1.5  # AUGMENTÉ pour éviter les coupures
 
     def start_detection(self):
         print("✅ Démarrage détection vocale + envoi LLM")
         
-        # AJOUTÉ : Bind du port pour recevoir les réponses
+        # Bind du port pour recevoir les réponses
         self.response_sock.bind(('0.0.0.0', self.response_port))
         
         self.is_running = True
@@ -42,7 +43,7 @@ class VoiceToLLM(object):
         self.monitoring_thread.daemon = True
         self.monitoring_thread.start()
         
-        # AJOUTÉ : Thread pour recevoir les réponses LLM
+        # Thread pour recevoir les réponses LLM
         self.response_thread = threading.Thread(target=self.receive_llm_responses)
         self.response_thread.daemon = True
         self.response_thread.start()
@@ -89,8 +90,22 @@ class VoiceToLLM(object):
             print("⏭️ Aucun mot à envoyer au LLM.")
             return
 
-        # Assemble phrase à partir des mots confidence > 0.3
-        phrase = " ".join([w[0] for w in self.words_buffer if w[1] > 0.4])
+        # Assemble phrase à partir des mots confidence > 0.5
+        phrase = " ".join([w[0] for w in self.words_buffer if w[1] > 0.5])
+        
+        # ✅ FILTRAGE DES MOTS PARASITES
+        filtered_words = []
+        for word in phrase.split():
+            if word.lower() not in ["nao", "naoh", "now", "no", "a", "à", "ah", "oh"]:
+                filtered_words.append(word)
+        
+        phrase = " ".join(filtered_words).strip()
+        
+        # ✅ ÉVITER L'ENVOI DE PHRASES VIDES OU TROP COURTES
+        if len(phrase) < 3:
+            print(f"⏭️ Phrase trop courte ou vide : '{phrase}' - ignorée")
+            return
+            
         print(f"✅ PHRASE CAPTÉE : '{phrase}'")
         msg = {
             "type": "conversation_end",
@@ -114,7 +129,7 @@ class VoiceToLLM(object):
                     llm_text = response_data.get('text', '')
                     if llm_text:
                         print(f"🧠➡️🗣️ PEPPER PARLE: {llm_text}")
-                        self.tts.say(llm_text)  # ICI PEPPER PARLE !
+                        self.tts.say(llm_text)
                         
             except Exception as e:
                 print(f"❌ Erreur réception réponse LLM: {e}")
@@ -142,6 +157,24 @@ if __name__ == "__main__":
     app = qi.Application(['VoiceToLLM', '--qi-url=' + connection_url])
     app.start()
     session = app.session
+
+    # 1. Active la vie autonome (posture, regard, awareness)
+    try:
+        autonomy = session.service("ALAutonomousLife")
+        autonomy.setState("solitary")
+        print("🤖 ALAutonomousLife en mode solitary (debout, regard, awareness)")
+    except Exception as e:
+        print(f"⚠️ Impossible de configurer ALAutonomousLife: {e}")
+
+    # 2. Stoppe tous les comportements autonomes (dont le smalltalk)
+    try:
+        bm = session.service("ALBehaviorManager")
+        behaviors = bm.getRunningBehaviors()
+        for behavior in behaviors:
+            bm.stopBehavior(behavior)
+        print(f"🛑 {len(behaviors)} comportements autonomes stoppés (smalltalk inclus)")
+    except Exception as e:
+        print(f"⚠️ Impossible d'arrêter les comportements autonomes: {e}")
 
     print("🤖 Détecteur vocal + Streaming LLM événementiel")
     detector = VoiceToLLM(session, llm_host=args.llm_host, llm_port=args.llm_port)
